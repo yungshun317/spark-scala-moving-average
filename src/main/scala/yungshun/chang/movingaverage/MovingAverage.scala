@@ -30,6 +30,28 @@ object MovingAverage {
     })
 
     val sortedData = valueTokey.repartitionAndSortWithinPartitions(new CompositeKeyPartitioner(numPartitions))
+
+    val keyValue = sortedData.map(k => (k._1.stockSymbol, (k._2)))
+    val groupByStockSymbol = keyValue.groupByKey()
+
+    val movingAverage = groupByStockSymbol.mapValues(values => {
+      val dateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd")
+      val queue = new scala.collection.mutable.Queue[Double]()
+      for (timeSeriesData <- values) yield {
+        queue.enqueue(timeSeriesData.closingStockPrice)
+        if (queue.size > brodcastWindow.value)
+          queue.dequeue
+
+        (dateFormat.format(new java.util.Date(timeSeriesData.timeStamp)), (queue.sum / queue.size))
+      }
+    })
+
+    val formattedResult = movingAverage.flatMap(kv => {
+      kv._2.map(v => (kv._1 + "," + v._1 + "," + v._2.toString()))
+    })
+    formattedResult.saveAsTextFile(output)
+
+    sc.stop()
   }
 }
 
