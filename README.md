@@ -33,7 +33,6 @@ val movingAverage = groupByStockSymbol.mapValues(values => {
 The mean (or average) of time series data (observations equally spaced in time, such as per hour or per day) from several consecutive periods is called the **moving average**. It's called "moving" because the average is continually recomputed as new time series data becomes available, and it progresses by dropping the earliest value and adding the most recent. 
 
 ## Up & Running
-
 In IntelliJ, execute `sbt package`.
 
 Run `spark-submit`.
@@ -60,6 +59,68 @@ AAPL,2013-10-07,485.39
 AAPL,2013-10-08,484.345
 AAPL,2013-10-09,483.765
 ```
+
+## Spark SQL
+We can achieve the same goal with `spark-shell` using Spark SQL.
+```sh
+scala> val df = spark.read.option("header", "false").option("inferSchema", "true").option("dateFormat", "yyyy-MM-dd").csv("/home/yungshun/workspace/scala/spark-scala-moving-average/datasets/input/stock_prices.csv").toDF("stock_symbol", "timestamp", "closing_price")
+df: org.apache.spark.sql.DataFrame = [stock_symbol: string, timestamp: timestamp ... 1 more field]
+
+scala> df.show()
++------------+-------------------+-------------+
+|stock_symbol|          timestamp|closing_price|
++------------+-------------------+-------------+
+|        GOOG|2004-11-04 00:00:00|        184.7|
+|        GOOG|2004-11-03 00:00:00|       191.67|
+|        GOOG|2004-11-02 00:00:00|       194.87|
+|        AAPL|2013-10-09 00:00:00|       486.59|
+|        AAPL|2013-10-08 00:00:00|       480.94|
+|        AAPL|2013-10-07 00:00:00|       487.75|
+|        AAPL|2013-10-04 00:00:00|       483.03|
+|        AAPL|2013-10-03 00:00:00|       483.41|
+|         IBM|2013-09-30 00:00:00|       185.18|
+|         IBM|2013-09-27 00:00:00|       186.92|
+|         IBM|2013-09-26 00:00:00|       190.22|
+|         IBM|2013-09-25 00:00:00|       189.47|
+|        GOOG|2013-07-19 00:00:00|        896.6|
+|        GOOG|2013-07-18 00:00:00|       910.68|
+|        GOOG|2013-07-17 00:00:00|       918.55|
++------------+-------------------+-------------+
+
+scala> import org.apache.spark.sql.expressions.Window
+import org.apache.spark.sql.expressions.Window
+
+scala> import org.apache.spark.sql.functions._
+import org.apache.spark.sql.functions._
+
+scala> val windowSpec = Window.partitionBy("stock_symbol").orderBy("timestamp").rowsBetween(-1, 0)
+windowSpec: org.apache.spark.sql.expressions.WindowSpec = org.apache.spark.sql.expressions.WindowSpec@30078038
+
+scala> val movingAverageDF = df.withColumn("moving_average", avg(df("closing_price")).over(windowSpec)).drop("closing_price")
+movingAverageDF: org.apache.spark.sql.DataFrame = [stock_symbol: string, timestamp: timestamp ... 1 more field]
+
+scala> movingAverageDF.show()
++------------+-------------------+------------------+                           
+|stock_symbol|          timestamp|    moving_average|
++------------+-------------------+------------------+
+|        AAPL|2013-10-03 00:00:00|            483.41|
+|        AAPL|2013-10-04 00:00:00|            483.22|
+|        AAPL|2013-10-07 00:00:00|            485.39|
+|        AAPL|2013-10-08 00:00:00|           484.345|
+|        AAPL|2013-10-09 00:00:00|           483.765|
+|        GOOG|2004-11-02 00:00:00|            194.87|
+|        GOOG|2004-11-03 00:00:00|193.26999999999998|
+|        GOOG|2004-11-04 00:00:00|           188.185|
+|        GOOG|2013-07-17 00:00:00|           551.625|
+|        GOOG|2013-07-18 00:00:00|           914.615|
+|        GOOG|2013-07-19 00:00:00|            903.64|
+|         IBM|2013-09-25 00:00:00|            189.47|
+|         IBM|2013-09-26 00:00:00|           189.845|
+|         IBM|2013-09-27 00:00:00|            188.57|
+|         IBM|2013-09-30 00:00:00|            186.05|
++------------+-------------------+------------------+
+```
+I think the key is setting a **window spec** as `val windowSpec = Window.partitionBy("stock_symbol").orderBy("timestamp").rowsBetween(-1, 0)` and then applying this `windowSpec` with `over` in `df.withColumn("moving_average", avg(df("closing_price")).over(windowSpec))`.
 
 ## Tech
 
